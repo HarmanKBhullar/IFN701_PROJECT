@@ -1,0 +1,504 @@
+---
+title: "Project_IFN701"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r warning=FALSE}
+#Loading required packages
+library(plyr)
+library(party)
+library(e1071)
+library(data.table)
+library(ellipse)
+```
+## LOADING THE DATA 
+##loading dataset
+```{r warning=FALSE}
+library(dplyr)
+library(RSQLite)
+#load soccer dataset
+soccerData <- dbConnect(SQLite(), dbname="/Users/harmanbhullar/Documents/database.sqlite")
+#list all tables in dataset
+dbListTables(soccerData)
+#loading all tables of interest
+#player table contains data about 11060 players
+player <- tbl_df(dbGetQuery(soccerData,"SELECT * FROM player"))
+#player_Attributes consists of all the features of players
+player_Attributes <- tbl_df(dbGetQuery(soccerData,"SELECT * FROM player_Attributes"))
+#team table consists of information about the 299 teams
+team <- tbl_df(dbGetQuery(soccerData,"SELECT * FROM Team"))
+#team_Attributes consists of all the features of all teams
+team_Attributes <- tbl_df(dbGetQuery(soccerData,"SELECT * FROM Team_Attributes"))
+# Match table contains the information about the all matches from 2008 to 2016
+Match <- tbl_df(dbGetQuery(soccerData,"SELECT * FROM Match"))
+
+```
+Summary: since soccer database has 8 tables.Here, I am interested in only 5(team,team_Attributes,player,player_Attribute and Match) tables. therefore i load only five tables of interest as i am interested to analyse the teams level and players level features and to predict the results i need match table which gives the results of matches w.r.t. teams api id,date of match and match api id. 
+#EXPLORING AND VISUALISING THE DATA
+## analyse and visualise the data using box plots
+visulaising the features of dataset at players levels
+```{r warning=FALSE}
+#browse stats table
+str(player_Attributes)
+#extract only the columns of interest which are the features of players and put in table plr_features.
+plr_features <- (player_Attributes[c(3,4,5, 6, 10:42)])
+#plot boxplot to visualise the features 
+boxplot(plr_features[,3:37], las = 2,main="boxplot for all features of players")
+
+```
+Summary: In above boxplot, there are so many variables who has alot of outliers in both direction minimum and maximum. which means that this dataset has so many variation which could be possible as this data is quite big and has featues for almost 11k players. 
+It can be clearly seen that finishing, volleys, curve, gk_accuracy, long-shots, interception,marking, standing_tackle,sliding_tacle has no outlier at all which means all values are near to mean value. These features could be considered as good to anlayse the features and performance of players. howeever, there are some features like gk_diving,gk_handling,gk_positioning and gk_reflexes has least variability but has a lot of outlier above the mean value which are scatter above the whole axis.
+On the other side, marking,standing_tackle, sliding_tacle has more variablity with no outlier at all.Crossing can be also good feature to be considered as has very small number of outliers below the mean. Most  of features has outliers below the mean value.
+
+## visualise the feartures of players:
+In above case there was so many outliers, as there was multple values for all features of each players, so by taking the mean of all features of each player.it would gives good results.
+```{r warning=FALSE}
+plr_feature <- (player_Attributes[c(3,5, 6, 10:42)])
+library(data.table)
+#coverting the dataframe "plr_feature"" into data.table for further calculations
+setDT(plr_feature)
+# taking the mean(average) of all the features of players w.r.t player_api_id and storing the results into mean_plr_features dataframe
+mean_plr_features <-plr_feature[ ,lapply(.SD, mean),  by = .(player_api_id)]
+#boxplot to visualise the changes from previous visulaisation.
+boxplot(mean_plr_features[,2:36], las = 2,main="boxplot for all features of players after taking mean of all features w.r.t player api id")
+```
+Summary: Here this boxplot for all features is better than previsous as we take mean of all features w.r.t the p;ayer api id and in this boxplot there is less number of outliers and more clear visualisation than the previous one. It can be clearly seen that crossing, finishing, volleys, curve, gk_accuracy, long-shots, interception,marking, standing_tackle,sliding_tacle has no outlier at all which means all values are near to mean value. These features could be considered as good to anlayse the features and performance of players. howeever, there are some features like gk_diving,gk_handling,gk_positioning and gk_reflexes has least variability but has a lot of outlier above the mean value which are scatter above the whole axis.
+On the other side, marking,standing_tackle, sliding_tacle has more variablity with no outlier at all.Crossing can be also good feature to be considered as has very small number of outliers below the mean. Most  of features has outliers below the mean value. 
+Hence, I have shortlisted important features overall rating, potentail, crossing, finishing, heading_accurancy, short_passing, volleys, dribbling, curve, free_kicking_accuracy, sprint_speed, agility, stamina, long_shorts, penalities, marking, standing_tackle, sliding_tackle, gk_diving, gk_handling for further visualisations.
+## Analyse the features and performance of players through match data.
+```{r}
+#checking what is available inside the match table for players and to observe how to connect match table and players
+str(Match)
+```
+Summary: Unfortunately, in match table there is no information is available for players in the the match table. Here all the columns for home and away players is empty. so, there is no scope to connect the player table with match to analyse the charcteristics of player through the performance in matches.
+
+## visualise players features by tracking the performance over the time.
+As there is no way to connect the players attributes and match table so here i am going to analyse the performance of players by visualising thefeatures with time(in years)
+```{r warning=FALSE}
+#loading required packages
+library(ggplot2)
+library(reshape2)
+library(lubridate)
+#convert the date column into year by year() function as i am interested in only years  
+plr_features$year <- year(plr_features$date)
+#subsetting datsset as per requirement of columns(taking only shortlisted features of players)
+subset_plr <- plr_features[c(3:12,16,17,22:24,29:34,38)]
+#melting the dataset to reshape it
+melted <- melt(subset_plr, id=c("year"))
+# taking mean for values as there are so many values for each player
+melted<- aggregate( formula = value~year+variable, data = melted, FUN = mean )
+# plotting all the features of players on the same plot
+ggplot(melted, aes(year,value, col=variable)) + 
+  geom_point() + 
+  stat_smooth() + ggtitle("feature visualisation for all player over the time")
+```
+Summary: Here, as in above figure of visualisation for all player over the time, interesting fact is there was major drop can be seen in the penalities over time which means that players improve their mistakes over the time as penalties decreases over the time.Moreover, gk_diving also decreses over the time period. on the other side, short_passing, dribbling, free_kick_accuracy and strengh improves over the time as there was increses can be observed in the plot over the time.
+however, rest of features reamins almost stable over the time period.
+## visualse top 10 players performance over time
+now, here i am only interested in top players performance over the time period. I am going to visualise the performance according to the characteristics of players over the time for top 5 players.
+```{r warning=FALSE}
+#subetting the features of players by taking only shortlisted features
+subset_plrs <- plr_features[c(1,3:12,16,17,22:24,29:34,38)]
+#melting the dataset to reshape 
+melt_plr <- melt(subset_plrs, id=c("year","player_api_id"))
+melt_plr<-aggregate( formula = value~year+variable+player_api_id, data = melt_plr, FUN = mean )
+library(dplyr)
+#merging plr_feature table and player by player_api_id to get the names of players
+name_plr <- merge(plr_features,player,by="player_api_id")
+# get the latest data about players 
+latest<-name_plr %>% group_by(player_api_id) %>% filter(date == max(date))
+# extract the top 10 players from latest overall rating
+top10_plrs <- latest %>% arrange(desc(overall_rating)) %>% 
+  head(n = 10)
+# extracting the player name and rank with player api id  for top 10 players and storing results into top10_plr
+top10_plr <- top10_plrs[c(1,40)]
+head(top10_plr)
+#merging two tables by player_api_id
+top10 <-merge(top10_plr,melt_plr
+         , by= c("player_api_id"))
+#sutset the data for top number 1 player i.e Lionel Messi 
+plr_1 <- subset(top10,player_name=="Lionel Messi")
+#sutset the data for top number 2 player i.e Cristiano Ronaldo
+plr_2 <-subset(top10,player_name=="Cristiano Ronaldo")
+#sutset the data for top number 3 player i.e Neymar
+plr_3 <-subset(top10,player_name=="Neymar")
+#sutset the data for top number 4 player i.e Manuel Neuer
+plr_4 <-subset(top10,player_name=="Manuel Neuer")
+#sutset the data for top number 5 player i.e Luis Suarez
+plr_5 <-subset(top10,player_name=="Luis Suarez")
+# plotting  all features of each players on the same plot 
+ggplot(plr_1, aes(year,value, col=variable) )+ 
+  geom_point() + 
+  stat_smooth() + ggtitle("feature visualisation for Lionel Messi number#1 player" )
+ggplot(plr_2, aes(year,value, col=variable)) + 
+  geom_point() + 
+  stat_smooth()+ ggtitle("feature visualisation for Cristiano Ronaldo number#2 player") 
+ggplot(plr_3, aes(year,value, col=variable)) + 
+  geom_point() + 
+  stat_smooth()+ ggtitle("feature visualisation for Neymar number#3 player") 
+ggplot(plr_4, aes(year,value, col=variable)) + 
+  geom_point() + 
+  stat_smooth()+ ggtitle("feature visualisation for Manuel Neuer number#4 player") 
+ggplot(plr_5, aes(year,value, col=variable)) + 
+  geom_point() + 
+  stat_smooth()+ ggtitle("feature visualisation for Luis Suarez number#5 player") 
+
+```
+Summary: Lionel Messi is number#1 player according to latest stats of players. Messi improves the mistakes over the time as there in the plot drop in the penalities can be seen. Also, he improves heading accuracy, overall rating, stamina, free kicking accuracy and sprint speed over the time as these features are increasing over the time period. But there was fluctuations can be seen in strengh overall improving. on the other side, marking decreses till 2012 and thereafter, it increases till end.
+Number #2 player, Cristiano Ronaldo's overall performance remains same over the time. but he get better with long shots over the time and dribbling and gk handling became weaker with time as drop can be seen with the time. however, penalities increses with the time.
+Number #3 player Neymar improves his stamina, kick accuracy and long shots with the time as seen increasing over the time but gk handling lacks with time and rest of features remains stable.
+Manuel Neuer number #4 most interesting fact can be seen that Neuer improves his mistakes ovet the time as major drop in penalities can be seen in the plot. his agility, stamina gets weak with the time as plot gives decresing trend. But he work on strenght, shot passing and handling accuracy and gets better with time as increasing trend can be noticed in graph.
+Luis Suarez number #5 improves standing tackle, sliding tackle, stamina and shot passing incresing trend is seen and here almost all features either getting better or remains same but nothing get worst with the time.
+
+## visulaisung the features at teams levels
+Now i am moving to teams level visualisation. First of all i am going to check the variation of different features with the help of box plot.
+```{r warning=FALSE}
+#browse stats table to check what is inside the table
+str(team_Attributes)
+#subsetting the dataset by selecting required columns of table and storing into team_features table.
+team_features <- (team_Attributes[c(3,4,5,7,9,12,14,16,19,21,23)])
+#convert the dataframe into the data.table
+setDT(team_features)
+#boxplot for team features
+boxplot(team_features[, 3:10], las = 2, main="Boxplot of all features of teams")
+```
+Summary: Here all features of all teams are stable. if i compare the all features with each other, then most variant  features are play speed, play passing and crossing. also, there are some outlier exists in all cases except play speed. moreover i am goint to exclude dribbling as there are so many NA/null values are in dribbling.
+## extract data from match table for home teams win loss or draw
+First of all i am going to extract the results for home from match table as it has values for number of goals for home and away country.
+```{r warning=FALSE}
+#subsetting the table by selecting required rows and storing into datafram a
+a <- Match[,6:11]
+# stats tables to check what (contents of table) is available inside table Match 
+str(a)
+#adding new column results which gives the match results of home team by comparing home_team_goals with away_team goals like if if home team score more goals than away then it win and if less then loss and if equal the draw 
+a$results <- a$home_team_goal
+a$results[a$home_team_goal>a$away_team_goal] <- "Win"
+a$results[a$home_team_goal<a$away_team_goal] <- "Loss"
+a$results[a$home_team_goal==a$away_team_goal] <- "Draw"
+#subsetting the table by selecting only required columns and storing in team_A for home team
+team_A<-a[c(1,2,3,7)]
+library(dplyr)
+#rename the column name home_team_api_id to team_api_id
+team_A<-team_A %>% dplyr::rename(team_api_id = home_team_api_id)
+str(team_A)
+```
+Summary: team A table is derived from Match table which has information about the date of match result of match for home team with                                                                        nnnnnnnn..l.;pnapi id for home team and match api id.
+##extract data from match table for away teams win loss or draw
+Here, i am going to extract the results for home from match table as it has values for number of goals for away and away country.
+```{r warning=FALSE}
+#subsetting the table by selecting required rows and storing into datafram b
+b <- Match[,6:11]
+#adding new column results which gives the match results of away team by comparing away_team_goals with home_team goals like if away team score more goals than home team then it win and if less then loss and if equal the draw 
+b$results <- b$away_team_goal
+b$results[b$home_team_goal<b$away_team_goal] <- "Win"
+b$results[b$home_team_goal>b$away_team_goal] <- "Loss"
+b$results[b$home_team_goal==b$away_team_goal] <- "Draw"
+#subsetting the table by selecting only required columns and storing in team_B for away team
+team_B<-b[c(1,2,4,7)]
+#rename the column name away_team_api_id to team_api_id
+team_B<-team_B %>% dplyr::rename(team_api_id = away_team_api_id)
+#team_B<-rename(team_B, "team_api_id"="away_team_api_id")
+str(team_A)
+```
+Summary: team B table is derived from Match table which has information about the date of match ,result of match for away team with api id for away team and match api id.
+## join tables to get results for all teams for win loss and draw
+Now after extracting the results for home and away team i am going to joint the tables into single table for all teams results for further visualisations.
+```{r warning=FALSE}
+#merging the results of home team and away team into single table for further calculations by match api id
+team_results <- merge(team_A,team_B,by="match_api_id")
+head(team_results)
+#binding the two tables of home teams results and away teams results into one table
+z <- rbind(team_A,team_B)
+str(z)
+library(dplyr)
+#getting the number of wins loss and draws of each team
+z1 <- with(z,table(team_api_id, results))
+z1<-as.data.frame.matrix(z1) 
+z1 <- add_rownames(z1, "team_api_id")
+head(z1)
+```
+First table gives the results for all teams in single table after connecting both tables of results of home and away.
+last table give the information about the results  of the number of wins,loss and draws for each teams.
+## visualise all the team A(home team)featues with respect to win draw and loss classes.
+```{r warning=FALSE}
+#join table team_results of team_A(home team) and team features by team_api_id and date
+A_vis<-merge(team_A,team_features
+         , by=c("team_api_id", "date"))
+#convert the results column from char type to factors
+A_vis$results=as.factor(A_vis$results)
+# load the libraries
+library(kernlab)
+library(ddalpha)
+library(caret)
+
+# Box plots for each attribute by class value
+featurePlot(x=A_vis[, 5:13], y=A_vis$results, plot="box", scales=list(x=list(relation="free"), y=list(relation="free")),adjust=0.5,cex=.6,pch = "|",auto.key = list(columns = 2), main="Boxplot for home teams features")
+```
+Summary: plot gives the infoirmation about the featues of home team for three classes win, loss and draw.
+mean of shooting for all of thre classes is almost same which means this features does not contribute towards the match result of home team. But when the defence pressure against home teams is low that time home team wins but when its high against home team that time away team wins and when its very low that team its draw. The mean of Defecnce aggression and defence team width against home team is almost same for when home team wins and loss. when play speed varies and went highest in cases when home team wins.
+Hence, defence pressure is very good feature for results of home teams as there was low pressure on home team agianst away when home team win.
+## visualise all the team B(away team) featues with respect to win draw and loss classes.
+```{r warning=FALSE}
+#join table team_results of team_B(away team) and team features by team_api_id and date
+B_vis<-merge(team_B,team_features
+         , by= c("team_api_id", "date"))
+#convert the results column from char type to factors
+B_vis$results=as.factor(B_vis$results)
+# load the libraries
+library(kernlab)
+library(ddalpha)
+library(caret)
+
+# box plots for each attribute by class value
+featurePlot(x=B_vis[, 5:13], y=B_vis$results, plot="box", scales=list(x=list(relation="free"), y=list(relation="free")),adjust=0.5,cex=.6,pch = "|",auto.key = list(columns = 2),main="Boxplot for away teams features")
+```
+Summary: this plot gives the infoirmation about the featues of away team for three classes win, loss and draw. if we compare this plot with previous home vs away its clear that defence pressure and aggresion of home team is always is very high aginst away team. now, when defence pressure of home team against away team is high that time away team losses the match when its low that time away team wins the match but opposite trend is obeserved in case of defence agresssion like when home teams agression is high that time more likey to chance of away team wins and when its low then home team wins the match. asso, when home teams defence width id high that time its draw but with high value of home teams defence width  it wins and with low it losses and vice versa. Away team wins when creation passing is high and loss when its lower
+## visualise features for all teams wrt W/D/L box plot
+```{r warning=FALSE}
+#join table team_results of all teams(home and away teams) and team features by team_api_id and date
+vis_features<-merge(z,team_features
+         , by=c("team_api_id", "date"))
+#convert the results column from char type to factors
+vis_features$results=as.factor(vis_features$results)
+# feature plot for each attribute by class value
+featurePlot(x=vis_features[, 5:13], y=vis_features$results, plot="box", scales=list(x=list(relation="free"), y=list(relation="free")),pch = "|",cex=.6, main="Boxplot for all teams features")
+```
+This plot is giving information about all the teams(home and away) for all features against home win and loss class. overall, there is more chances to be winner of match if team has less defence pressure and if its high there is more chance to loss a match. But opposite trend and interesting fact can be seen when it comes to defence aggresion like when defence teamds shows more aggresion then team wins agains aggression but losses when its low.
+## visualise features wrt W/D/L density plot
+```{r warning=FALSE}
+# density plot w.r.t win, loss and draw class
+featurePlot(x=vis_features[c(5,7:13)], y=vis_features$results, plot="density", scales=list(x=list(relation="free"), y=list(relation="free")),pch = "|",cex=.6,auto.key = list(space = "top"), main="density plot for all teams features")
+
+```
+here from density plot, there is no strong relationship for win class and all features of teams but team will always loss when there is high defence aggressoion and pressure and play passing. and its draw when there is high creation shooting and creation passing.
+## finding co-relation of all features of teams with loss and win class
+
+```{r warning=FALSE}
+#subsetting the dataset by deleting unwanted columns
+team_feature <- (team_features[,c(-2,-4)])
+#taking the mean of all features w.r.t team_api_id
+mean_team <- team_feature [ ,lapply(.SD, mean),  by = .(team_api_id)]
+#merging z table which contains results of all teams and mean_team table which contains mean of all features by team_api_id
+cor_teams<-merge(z,mean_team
+         , by=c("team_api_id"))
+#convert the results column from char type to factors
+cor_teams$results=as.factor(cor_teams$results)
+# finding correlation using ggcorr
+library(corrplot)
+#substting the dataset by selecting the data only for win class
+win<-subset(cor_teams, results=="Win")
+win <-cor(win[,5:12])
+title <- "Correlation in features W.R.T. win"
+#plotting correction plot for all features w.r.t win class
+corrplot(win, method = "circle", order="hclust", addrect=2, title = title,mar=c(0,0,1,0) )
+#substting the dataset by selecting the data only for loss class
+loss <-subset(cor_teams, results=="Loss")
+loss <-cor(loss[,5:12])
+title <- "Correlation in features W.R.T. loss"
+#plotting correction plot for all features w.r.t loss class
+corrplot(loss, method = "circle", order="hclust", addrect=2, title = title,mar=c(0,0,1,0) )
+```
+here Correlation in features W.R.T. win shows that play speed has positive co-realtion withplay passing, creation passing and defence agression like when they highly co related with positive realtion then there is high chance to win. moreover, crossing has also positive co relation for win class with creation passing. there is negative co relation between defence pressure and play passing in case of win.
+when observing against loss class,play speed has positive relation with play passing and creation passing. but play passing has negaive co reation with creation shooting and defenec pressure but defence pressure and defence aggresion has positive co relation for loss class. which means when efence pressure and defence aggresion are positively co related then there is more chance that team will loss the match.
+## PREDICTION MODEL
+
+## preparing dataset for prediction model
+```{r warning=FALSE}
+# a is a dataset which contains results for home team so here i am adding new column "team_type" and giving value "home"
+a$team_type<-"home"
+#subsetting the dataset by selecting the required columns and storing them in c1 dataframe
+c1<-a[,c(3,4,7,8)]
+#convert the results column from char type to factor
+c1$results=as.factor(c1$results)
+#convert the team_type column from char type to factor
+c1$team_type=as.factor(c1$team_type)
+#adding new column for speed of home teams and extracting the speed values by matching home_team_api_id from c1 table with team_id from mean_team table
+c1$speed_home_team<-mean_team$buildUpPlaySpeed[match(c1$home_team_api_id, mean_team$team_api_id)]
+#adding new column for speed of away teams and extracting the speed values by matching away_team_api_id from c1 table with team_id from mean_team table
+c1$speed_away_team<-mean_team$buildUpPlaySpeed[match(c1$away_team_api_id, mean_team$team_api_id)]
+#adding a new column for speed difference for home teams from away teams
+c1$speed_diff <- (c1$speed_home_team - c1$speed_away_team)
+#adding new column for playPassing of home teams and extracting the playPassing values by matching home_team_api_id from c1 table with team_id from mean_team table
+c1$playPassing_home_team<-mean_team$buildUpPlayPassing[match(c1$home_team_api_id, mean_team$team_api_id)]
+#adding new column for playPassing of away teams and extracting the playPassing values by matching away_team_api_id from c1 table with team_id from mean_team table
+c1$playPassing_away_team<-mean_team$buildUpPlayPassing[match(c1$away_team_api_id, mean_team$team_api_id)]
+#adding a new column for playPassing difference for home teams from away teams
+c1$playPassing_diff <- (c1$playPassing_home_team - c1$playPassing_away_team)
+#adding new column for creationPassing of home teams and extracting the creationPassing values by matching home_team_api_id from c1 table with team_id from mean_team table
+c1$creationPassing_home_team<-mean_team$chanceCreationPassing[match(c1$home_team_api_id, mean_team$team_api_id)]
+#adding new column for creationPassing of away teams and extracting the creationPassing values by matching away_team_api_id from c1 table with team_id from mean_team table
+c1$creationPassing_away_team<-mean_team$chanceCreationPassing[match(c1$away_team_api_id, mean_team$team_api_id)]
+#adding a new column for creationPassing difference for home teams from away teams
+c1$creationPassing_diff <- (c1$creationPassing_home_team - c1$creationPassing_away_team)
+#adding new column for Crossing of home teams and extracting the Crossing values by matching home_team_api_id from c1 table with team_id from mean_team table
+c1$Crossing_home_team<-mean_team$chanceCreationCrossing[match(c1$home_team_api_id, mean_team$team_api_id)]
+#adding new column for Crossing of away teams and extracting the Crossing values by matching away_team_api_id from c1 table with team_id from mean_team table
+c1$Crossing_away_team<-mean_team$chanceCreationCrossing[match(c1$away_team_api_id, mean_team$team_api_id)]
+#adding a new column for Crossing difference for home teams from away teams
+c1$crossing_diff <- (c1$Crossing_home_team - c1$Crossing_away_team)
+#adding new column for shooting of home teams and extracting the shooting values by matching home_team_api_id from c1 table with team_id from mean_team table
+c1$shooting_home_team<-mean_team$chanceCreationShooting[match(c1$home_team_api_id, mean_team$team_api_id)]
+#adding new column for shooting of away teams and extracting the shooting values by matching away_team_api_id from c1 table with team_id from mean_team table
+c1$shooting_away_team<-mean_team$chanceCreationShooting[match(c1$away_team_api_id, mean_team$team_api_id)]
+#adding a new column for shooting difference for home teams from away teams
+c1$shooting_diff <- (c1$shooting_home_team - c1$shooting_away_team)
+#adding new column for defencePressure of home teams and extracting the defencePressure values by matching home_team_api_id from c1 table with team_id from mean_team table
+c1$defencePressure_home_team<-mean_team$defencePressure[match(c1$home_team_api_id, mean_team$team_api_id)]
+#adding new column for defencePressure of away teams and extracting the defencePressure values by matching away_team_api_id from c1 table with team_id from mean_team table
+c1$defencePressure_away_team<-mean_team$defencePressure[match(c1$away_team_api_id, mean_team$team_api_id)]
+#adding a new column for defencePressure difference for home teams from away teams
+c1$defencePressure_diff<-(c1$defencePressure_home_team-c1$defencePressure_away_team)
+#adding new column for defenceAggression of home teams and extracting the defenceAggressione values by matching home_team_api_id from c1 table with team_id from mean_team table
+c1$defenceAggression_home_team<-mean_team$defenceAggression[match(c1$home_team_api_id, mean_team$team_api_id)]
+#adding new column for defenceAggression of away teams and extracting the defenceAggression values by matching away_team_api_id from c1 table with team_id from mean_team table
+c1$defenceAggression_away_team<-mean_team$defenceAggression[match(c1$away_team_api_id, mean_team$team_api_id)]
+#adding a new column for defenceAggression difference for home teams from away teams
+c1$defenceAggression_diff<-(c1$defenceAggression_home_team-c1$defenceAggression_away_team)
+#adding new column for defenceTeamWidth of home teams and extracting the defenceTeamWidth values by matching home_team_api_id from c1 table with team_id from mean_team table
+c1$defenceTeamWidth_home_team<-mean_team$defenceTeamWidth[match(c1$home_team_api_id, mean_team$team_api_id)]
+#adding new column fordefenceTeamWidth of away teams and extracting the defenceTeamWidth values by matching away_team_api_id from c1 table with team_id from mean_team table
+c1$defenceTeamWidth_away_team<-mean_team$defenceTeamWidth[match(c1$away_team_api_id, mean_team$team_api_id)]
+#adding a new column for defenceTeamWidth difference for home teams from away teams
+c1$defenceTeamWidth_diff<-(c1$defenceTeamWidth_home_team-c1$defenceTeamWidth_away_team)
+#data cleaning i.e. removing the rows having NA/null values from c1 dataframe 
+c1<-na.omit(c1)
+# b is a dataset which contains results for away team so here i am adding new column "team_type" and giving value "away"
+b$team_type<-"away"
+#subsetting the dataset by selecting the required columns and storing them in c2 dataframe
+c2<-b[,c(3,4,7,8)]
+#convert the results column from char type to factor
+c2$results=as.factor(c2$results)
+#convert the team_type column from char type to factor
+c2$team_type=as.factor(c2$team_type)
+#adding new column for speed of away teams and extracting the speed values by matching home_team_api_id from c2 table with team_id from mean_team table
+c2$speed_home_team<-mean_team$buildUpPlaySpeed[match(c2$home_team_api_id, mean_team$team_api_id)]
+#adding new column for speed of away teams and extracting the speed values by matching away_team_api_id from c2 table with team_id from mean_team table
+c2$speed_away_team<-mean_team$buildUpPlaySpeed[match(c2$away_team_api_id, mean_team$team_api_id)]
+#adding a new column for speed difference for away teams from home teams
+c2$speed_diff <- (c2$speed_away_team - c2$speed_home_team)
+#adding new column for playPassing of home teams and extracting the playPassing values by matching home_team_api_id from c2 table with team_id from mean_team table
+c2$playPassing_home_team<-mean_team$buildUpPlayPassing[match(c2$home_team_api_id, mean_team$team_api_id)]
+#adding new column for playPassing of away teams and extracting the playPassing values by matching away_team_api_id from c2 table with team_id from mean_team table
+c2$playPassing_away_team<-mean_team$buildUpPlayPassing[match(c2$away_team_api_id, mean_team$team_api_id)]
+#adding a new column for playPassing difference for away teams from home teams
+c2$playPassing_diff <- (c2$playPassing_away_team - c2$playPassing_home_team)
+#adding new column for creationPassing of home teams and extracting the creationPassing values by matching home_team_api_id from c2 table with team_id from mean_team table
+c2$creationPassing_home_team<-mean_team$chanceCreationPassing[match(c2$home_team_api_id, mean_team$team_api_id)]
+#adding new column for creationPassing of away teams and extracting the creationPassing values by matching away_team_api_id from c2 table with team_id from mean_team table
+c2$creationPassing_away_team<-mean_team$chanceCreationPassing[match(c2$away_team_api_id, mean_team$team_api_id)]
+#adding a new column for creationPassing difference for away teams from home teams
+c2$creationPassing_diff <- (c2$creationPassing_away_team - c2$creationPassing_home_team)
+#adding new column for Crossing of home teams and extracting the Crossing values by matching home_team_api_id from c2 table with team_id from mean_team table
+c2$Crossing_home_team<-mean_team$chanceCreationCrossing[match(c2$home_team_api_id, mean_team$team_api_id)]
+#adding new column for Crossing of away teams and extracting the Crossing values by matching away_team_api_id from c2 table with team_id from mean_team table
+c2$Crossing_away_team<-mean_team$chanceCreationCrossing[match(c2$away_team_api_id, mean_team$team_api_id)]
+#adding a new column for Crossing difference for away teams from home teams
+c2$crossing_diff <- (c2$Crossing_away_team - c2$Crossing_home_team)
+#adding new column for shooting of home teams and extracting the shooting values by matching home_team_api_id from c2 table with team_id from mean_team table
+c2$shooting_home_team<-mean_team$chanceCreationShooting[match(c2$home_team_api_id, mean_team$team_api_id)]
+#adding new column for shooting of away teams and extracting the shooting values by matching away_team_api_id from c2 table with team_id from mean_team table
+c2$shooting_away_team<-mean_team$chanceCreationShooting[match(c2$away_team_api_id, mean_team$team_api_id)]
+#adding a new column for shooting difference for away teams from home teams
+c2$shooting_diff <- (c2$shooting_away_team - c2$shooting_home_team)
+#adding new column for defencePressure of home teams and extracting the defencePressure values by matching home_team_api_id from c2 table with team_id from mean_team table
+c2$defencePressure_home_team<-mean_team$defencePressure[match(c2$home_team_api_id, mean_team$team_api_id)]
+#adding new column for defencePressure of away teams and extracting the defencePressure values by matching away_team_api_id from c2 table with team_id from mean_team table
+c2$defencePressure_away_team<-mean_team$defencePressure[match(c2$away_team_api_id, mean_team$team_api_id)]
+#adding a new column for defencePressure difference for away teams from home teams
+c2$defencePressure_diff<-(c2$defencePressure_away_team-c2$defencePressure_home_team)
+#adding new column for defenceAggression of home teams and extracting the defenceAggressione values by matching home_team_api_id from c2 table with team_id from mean_team table
+c2$defenceAggression_home_team<-mean_team$defenceAggression[match(c2$home_team_api_id, mean_team$team_api_id)]
+#adding new column for defenceAggression of away teams and extracting the defenceAggression values by matching away_team_api_id from c2 table with team_id from mean_team table
+c2$defenceAggression_away_team<-mean_team$defenceAggression[match(c2$away_team_api_id, mean_team$team_api_id)]
+#adding a new column for defenceAggression difference for away teams from home teams
+c2$defenceAggression_diff<-(c2$defenceAggression_away_team-c2$defenceAggression_home_team)
+#adding new column for defenceTeamWidth of home teams and extracting the defenceTeamWidth values by matching home_team_api_id from c2 table with team_id from mean_team table
+c2$defenceTeamWidth_home_team<-mean_team$defenceTeamWidth[match(c2$home_team_api_id, mean_team$team_api_id)]
+#adding new column fordefenceTeamWidth of away teams and extracting the defenceTeamWidth values by matching away_team_api_id from c2 table with team_id from mean_team table
+c2$defenceTeamWidth_away_team<-mean_team$defenceTeamWidth[match(c2$away_team_api_id, mean_team$team_api_id)]
+#adding a new column for defenceTeamWidth difference for away teams from home teams
+c2$defenceTeamWidth_diff<-(c2$defenceTeamWidth_away_team-c2$defenceTeamWidth_home_team)
+#data cleaning i.e. removing the rows having NA/null values from c2 dataframe 
+c2<-na.omit(c2)
+#binding dataframe c1 and c2 c1
+c<-rbind(c1,c2)
+c<-c[c(3,4,7,10,13,16,19,22,25,28)]
+str(c)
+#c<- subset(c,results!=c('Draw'))
+```
+here i prepared the dataset for prediction model. for prediction model i am going to consider the differnce of all the features between team A and team B and also weather team is home or away.C table has information about the results of each team, team type and difference of all features with team api id.
+## why home and away feature is an important to predict results:
+
+```{r warning=FALSE}
+library(reshape2)
+a1<-c[c(1,2)]
+a1<- data.frame(table(a1$results,a1$team_type))
+names(a1) <- c("Results","Team","Count")
+
+ggplot(data=a1, aes(x=Results, y=Count, fill=Team)) + geom_bar(stat="identity", position = "dodge")
+```
+
+
+## PREDICTION MODEL : DECISION TREE
+```{r, fig.height=15,fig.width=40}
+library(caret)
+# "seed" a random number generator 
+set.seed(1234)
+
+# Split the data into 70% training, 30% test
+ind <- sample(2, nrow(c), replace=TRUE, prob=c(0.7, 0.3))
+train_data <- c[ind==1,]
+test_data <- c[ind==2,]
+#classify match data 
+formula <- results ~  team_type + speed_diff + playPassing_diff + creationPassing_diff + crossing_diff + shooting_diff + defencePressure_diff + defenceAggression_diff + defenceTeamWidth_diff
+library(partykit)
+#decision tree for data
+Ctree <- ctree(formula, data = train_data)
+#prediction table
+table(predict(Ctree, newdata = test_data), test_data$results)
+plot(Ctree, gp = gpar(fontsize = 20),     # font size changed to 10
+  inner_panel=node_inner,
+  ip_args=list(
+       abbreviate = TRUE, 
+       id = FALSE))
+#confusion matrix for dataset
+confusionMatrix(predict(Ctree, newdata = test_data), test_data$results)
+```
+summary: decision tree model's accuracy rate is 46.56% for three classes loss, win and draw, but this is not predicting draw class accurately. it gives 7168 correct predictions/results for win and loss class out of 15395. it is very clear that it is very diificult to predict draw class and giving 2036 wrong results for draw class. deciion tree start node is weather team is home or away.
+## PREDICTION MODEL : SVM model
+```{r warning=FALSE}
+Model_SVM <- svm(results ~  team_type + speed_diff + playPassing_diff + creationPassing_diff + crossing_diff + shooting_diff + defencePressure_diff + defenceAggression_diff + defenceTeamWidth_diff, data = train_data, kernel = "linear", cost = 0.1, gamma = 0.1)
+summary(Model_SVM)
+SVMTest <- predict(Model_SVM, test_data)
+table(predict( Model_SVM, newdata= test_data), test_data$results) 
+confusionMatrix(predict(Model_SVM, newdata = test_data), test_data$results)
+library(gmodels)
+CrossTable(SVMTest, test_data$results, prop.chisq = FALSE)
+```
+Summary: SVM model's accuracy rate is 45.11% which is lower than the decision tree model. there are 31717 support vectors for this model and it gives 6944 correct prediction results out of 15395.
+##prediction model: random forest
+```{r warning=FALSE}
+library(randomForest)
+#classify match data #Applying the formula for Random Forest Algorithm
+RF <- results ~  team_type + speed_diff + playPassing_diff + creationPassing_diff + crossing_diff + shooting_diff + defencePressure_diff + defenceAggression_diff + defenceTeamWidth_diff
+#random forest model for dataset 
+RF_model <- randomForest(RF, data = train_data , ntree= 100, proximity = T)
+print(RF_model)
+#To plot the Variable Importance Plot.
+ImportancePlot <- varImpPlot(RF_model, main = "Importance of each variable")
+RFTest <- predict(RF_model, newdata =test_data)
+#prediction table
+TestPredictionTable <- table(RFTest, test_data$results)
+print(TestPredictionTable)
+#confusion matrix 
+confusionMatrix(RFTest, test_data$results)
+importance(RF_model)
+library(gmodels)
+CrossTable(RFTest, test_data$results, prop.chisq = FALSE)
+```
+Summary: Random forest model gives 43.69% accuracy rate and error rate is 56.31%. it gives highest error rate(approx. 80%) for draw class as it is unable to predict correctly.error rate for win and loss is 48.15% and 48.31% respectively.this model is giving total of 6726 correct results out of 15395.
+Conclusion: out of above three prediction models decision tree model gives higest accuracy rate but decision tree and SVM completely giving wrong results for draw class however, random forest is only model which is predicting all of three classes but giving 43.7% accuracy rate. so, random forest can be considered as good prediction model when we considering all of three classes and decision tree gives more accuracy when its two classes win and loss. 
